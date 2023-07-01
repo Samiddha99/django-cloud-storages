@@ -1,0 +1,4 @@
+appwrite==2.0.0
+Django==4.2.2
+dropbox==11.36.2
+requests==2.31.0
