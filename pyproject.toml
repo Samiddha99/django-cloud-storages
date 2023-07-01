@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-cloud-storages"
-version = "1.1.1"
+version = "1.1.2"
 authors = [
   { name="Samiddha Chakrabarti", email="samiddha99@protonmail.com" },
 ]
@@ -19,4 +19,5 @@ classifiers = [
 
 [project.urls]
 "Homepage" = "https://github.com/Samiddha99/django-cloud-storages"
+"Documentation" = "https://django-cloud-storages.readthedocs.io"
 "Bug Tracker" = "https://github.com/Samiddha99/django-cloud-storages/issues"

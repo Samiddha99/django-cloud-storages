@@ -8,7 +8,7 @@ Welcome to django-cloud-storages's documentation!
 
 django-cloud-storages is a package developed for django to work with cloud storages to store/upload media files.
 
-At the moment this package support the following cloud storage services.
+At the moment this package support the following cloud storage services -
 
 .. toctree::
    :maxdepth: 1

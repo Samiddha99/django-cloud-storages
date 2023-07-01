@@ -2,8 +2,12 @@
 
 django-cloud-storages is a package developed for django to work with cloud storages to store/upload media files.
 
-This package *extends* the [django Storage class](https://docs.djangoproject.com/en/4.2/ref/files/storage/#django.core.files.storage.Storage) to provide file storage in cloud.
+This package extends the [django Storage class](https://docs.djangoproject.com/en/4.2/ref/files/storage/#django.core.files.storage.Storage) to provide file storage in cloud.
 
+At the moment this package support the following cloud storage services -
+
+* AppWrite
+* DropBox
 
 ### **Installation**
 
