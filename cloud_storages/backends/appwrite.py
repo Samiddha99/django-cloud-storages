@@ -2,12 +2,16 @@ import requests
 import secrets
 import string
 import traceback
+import re
 
+from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
 from django.core.files import File
 from django.utils.deconstruct import deconstructible
 from django.utils.deconstruct import deconstructible
 
+from appwrite.role import Role
+from appwrite.permission import Permission
 from appwrite.client import Client
 from appwrite.input_file import InputFile
 from appwrite.services.storage import Storage as appwrite_storage
@@ -19,7 +23,9 @@ from cloud_storages.utils import *
 @deconstructible
 class AppWriteStorage(Storage):
     CHUNK_SIZE = 4 * 1024 * 1024
+    MAX_FILE_NAME_LENGTH = 30
     def __init__(self):
+        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', False)
         self.APPWRITE_API_KEY = setting('APPWRITE_API_KEY')
         self.APPWRITE_PROJECT_ID = setting('APPWRITE_PROJECT_ID')
         self.APPWRITE_BUCKET_ID = setting('APPWRITE_BUCKET_ID')
@@ -38,12 +44,21 @@ class AppWriteStorage(Storage):
         """Retrieve the specified file from storage."""
         return self._open(name, mode)
     def _open(self, name, mode='rb'):
-        result = self.url(name)
-        response = requests.get(result)
-        if (response.status_code == 200):
-            data = response.text
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            response = self.storage.get_file_view(folder, filename)
+            data = ContentFile(response)
             remote_file = File(data)
             return remote_file
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e
     
     def save(self, name, content, max_length=None):
         """
@@ -51,30 +66,81 @@ class AppWriteStorage(Storage):
         a proper File object or any Python file-like object, ready to be read
         from the beginning.
         """
-        if not hasattr(content, "chunks"):
-            content = File(content, name)
-        name = self.get_available_name(name, max_length=max_length)
-        name = self._save(name, content)
-        return name['file_id']
-    def _save(self, name, content):
+        folder, org_filename = self.extract_folder_and_filename(name)
+        content = File(content, org_filename)
+        # if not hasattr(content, "chunks"):
+        #     content = File(content, org_filename)
+        folder = self.create_folder(folder)
+        path = self.get_available_name(name=name, content=content, max_length=max_length)
+        if path[1] is None:
+            self._save(path[0], content)
+        return path[0]
+    def _save(self, path, content):
+        folder, filename = self.extract_folder_and_filename(path)
         content.open()
-        the_file = InputFile.from_bytes(bytes=content.read(), filename=name['file_name'])
-        result = self.storage.create_file(self.APPWRITE_BUCKET_ID, name['file_id'], the_file)
+        the_file = InputFile.from_bytes(bytes=content.read(), filename=content.name)
+        result = self.storage.create_file(bucket_id=folder, file_id=filename, file=the_file)
         content.close()
-        return name
+        return path
     
-    def get_available_name(self, name, max_length=None):
+    def _id_validation(self, name):
+        name = re.sub(r"^\W+|^_+", "", name) # Remove special characters at beginning
+        name = re.sub(r"[^a-zA-Z0-9-._]*", "", name)
+        return name
+
+    def extract_folder_and_filename(self, path):
+        path = str(path).replace("\\", "/")
+        folders = path.split("/")
+        if len(folders) == 0:
+            last_folder = self.APPWRITE_BUCKET_ID
+            file_name = path
+        elif len(folders) == 1:
+            last_folder = self.APPWRITE_BUCKET_ID
+            file_name = folders[0]
+        else:
+            file_name = folders.pop()  # eliminate the last item i.e. file name
+            last_folder = folders.pop()
+        last_folder = last_folder if len(last_folder) <= self.MAX_FILE_NAME_LENGTH else last_folder[0:30]
+        last_folder = self._id_validation(last_folder)
+        # file_name = self.get_valid_name(file_name)
+        return (last_folder, file_name)
+    
+    def create_folder(self, folder):
+        try:
+            result = self.storage.get_bucket(folder)
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                result = self.storage.create_bucket(bucket_id=folder, name=folder, permissions=[Permission.read(Role.any())], file_security=False, enabled=True, encryption=False, antivirus=False)
+            else:
+                raise e
+        return folder
+
+    def get_available_name(self, name, content, max_length=None):
         """
         Return a filename that's free on the target storage system and
         available for new content to be written to.
         """
-        new_name = self.get_valid_name(name)
+        formatted_name = self.get_valid_name(name)
+        new_name = formatted_name
+        index = 0
         while(1):
-            if self.exists(new_name['file_id']):
-                new_name = self.get_valid_name(name)
+            index += 1
+            if self.exists(new_name): # check file existence with file name
+                if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
+                    # check file existence with file's contents
+                    remote_file = self.open(new_name)
+                    remote_file.open()
+                    content.open()
+                    remote_file_data = remote_file.read()
+                    content_data = content.read()
+                    remote_file.close()
+                    content.close()
+                    if remote_file_data == content_data:
+                        return (new_name, 'Exists')
+                new_name = self.get_alternative_name(formatted_name, index=index)
                 continue
             break
-        return new_name
+        return (new_name, None)
     
     def generate_filename(self, filename):
         """
@@ -89,40 +155,61 @@ class AppWriteStorage(Storage):
         Return a filename, based on the provided filename, that's suitable for
         use in the target storage system.
         """
-        name = str(name).replace("\\", "/")
-        alphaNumeric = string.ascii_uppercase + string.digits
-        file_id = ''.join([secrets.choice(alphaNumeric) for i in range(36)])
-        return {'file_id': file_id, 'file_name': name}
+        folder, filename = self.extract_folder_and_filename(name)
+        filename = self._id_validation(filename)
+        res = filename.rsplit('.', 1)  # Split on last occurrence of delimiter
+        if len(res[0])>self.MAX_FILE_NAME_LENGTH:
+            err_msg = f"File name's length must be less than or equal to {self.MAX_FILE_NAME_LENGTH}."
+            raise FileNameLengthError(max_length=self.MAX_FILE_NAME_LENGTH, message=err_msg)
+        elif len(res[0]) < 1:
+            err_msg = f"File name's length is too small. Avoid using special characters in file name, and file name should not start with underscore."
+            raise FileNameLengthError(message=err_msg)
+        return f"{folder}/{filename}"
+        # return {'file_id': filename, 'file_name': filename, 'folder_id': folder, 'folder_name': folder}
 
-    def get_alternative_name(self, file_root, file_ext):
+    def get_alternative_name(self, file_root, file_ext=None, index=0):
         """
         Return an alternative filename if one exists to the filename.
         """
-        name = str(name).replace("\\", "/")
-        alphaNumeric = string.ascii_uppercase + string.digits
-        file_id = ''.join([secrets.choice(alphaNumeric) for i in range(36)])
-        return {'file_id': file_id, 'file_name': name}
+        folder, filename = self.extract_folder_and_filename(file_root)
+        res = filename.rsplit('.', 1)  # Split on last occurrence of delimiter
+        file_name = f"{res[0]}-{index}"
+        file_ext = res[1]
+        updated_name =  f"{file_name}.{file_ext}"
+        return f"{folder}/{updated_name}"
+        # return {'file_id': updated_name, 'file_name': updated_name, 'folder_id': file_root['folder_id'], 'folder_name': file_root['folder_name']}
 
     def delete(self, name):
         """
         Delete the specified file from the storage system.
         """
-        result = self.storage.delete_file(self.APPWRITE_BUCKET_ID, name)
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            result = self.storage.delete_file(folder, filename)
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e
 
     def exists(self, name):
         """
         Return True if a file referenced by the given name already exists in the
         storage system, or False if the name is available for a new file.
         """
+        folder, filename = self.extract_folder_and_filename(name)
         try:
-            result = self.storage.get_file(self.APPWRITE_BUCKET_ID, name)
+            result = self.storage.get_file(folder, filename)
             return True
         except AppwriteException as e:
-            if str(e) == "The requested file could not be found.":
+            if str(e) == "The requested file could not be found." or str(e) == "Storage bucket with the requested ID could not be found.":
                 return False
             else:
-                traceback.print_exc()
-                raise(e)
+                raise e
         
     def listdir(self, path):
         """
@@ -135,48 +222,81 @@ class AppWriteStorage(Storage):
         """
         Return the total size, in bytes, of the file specified by name.
         """
-        result = self.storage.get_file(self.APPWRITE_BUCKET_ID, name)
-        return result.sizeOriginal
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            result = self.storage.get_file(folder, filename)
+            return result.sizeOriginal
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e
     
-    def url(self, name, permanent_link=False):
+    def url(self, name, permanent_link=None):
         """
         Return an absolute URL where the file's contents can be accessed directly by a web browser.
         """
-        try:
-            file_url = f"https://cloud.appwrite.io/v1/storage/buckets/{self.APPWRITE_BUCKET_ID}/files/{name}/view?project={self.APPWRITE_PROJECT_ID}"
-            return file_url
-        except Exception as e:
-            print(e)
-            return None
+        folder, filename = self.extract_folder_and_filename(name)
+        file_url = f"{self.APPWRITE_API_ENDPOINT}/storage/buckets/{folder}/files/{filename}/view?project={self.APPWRITE_PROJECT_ID}"
+        return file_url
     
     def get_accessed_time(self, name):
         """
         Return the last accessed time (as a datetime) of the file specified by name.
         The datetime will be timezone-aware if USE_TZ=True.
         """
-        result = self.storage.get_file(self.APPWRITE_BUCKET_ID, name)
-        return result.updatedAt
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            result = self.storage.get_file(folder, filename)
+            return result.updatedAt
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e
 
     def get_created_time(self, name):
         """
         Return the creation time (as a datetime) of the file specified by name.
         The datetime will be timezone-aware if USE_TZ=True.
         """
-        result = self.storage.get_file(self.APPWRITE_BUCKET_ID, name)
-        return result.createdAt
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            result = self.storage.get_file(folder, filename)
+            return result.createdAt
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e
     
     def get_modified_time(self, name):
         """
         Return the last modified time (as a datetime) of the file specified by
         name. The datetime will be timezone-aware if USE_TZ=True.
         """
-        result = self.storage.get_file(self.APPWRITE_BUCKET_ID, name)
-        return result.updatedAt
-    
-
-    
-    
-    
-
-        
-
+        folder, filename = self.extract_folder_and_filename(name)
+        try:
+            result = self.storage.get_file(folder, filename)
+            return result.updatedAt
+        except AppwriteException as e:
+            if str(e) == "Storage bucket with the requested ID could not be found.":
+                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+                raise ContentDoesNotExistsError(error_msg)
+            elif str(e) == "The requested file could not be found.":
+                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+                raise ContentDoesNotExistsError(error_msg)
+            else:
+                raise e

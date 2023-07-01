@@ -11,3 +11,24 @@ def setting(name, default=None):
     :returns: Setting's value
     """
     return getattr(settings, name, default)
+
+
+class FileNameLengthError(Exception):
+    """Exception raised for errors when file name length is too large or too small.
+    """
+    def __init__(self, message, min_length=None, max_length=None):
+        self.min_length = min_length
+        self.max_length = max_length
+        self.message = message
+        super().__init__(self.message)
+    def __str__(self):
+        return self.message
+
+class ContentDoesNotExistsError(Exception):
+    """Exception raised for errors when the requested file or folder does not exists.
+    """
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+    def __str__(self):
+        return self.message

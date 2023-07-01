@@ -18,11 +18,14 @@ _DEFAULT_MODE = 'add'
 @deconstructible
 class DropBoxStorage(Storage):
     CHUNK_SIZE = 4 * 1024 * 1024
+    DROPBOX_PERMANENT_LINK = False
     def __init__(self):
+        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', False)
         self.DROPBOX_OAUTH2_ACCESS_TOKEN = setting('DROPBOX_OAUTH2_ACCESS_TOKEN')
         self.DROPBOX_OAUTH2_REFRESH_TOKEN = setting('DROPBOX_OAUTH2_REFRESH_TOKEN')
         self.DROPBOX_APP_KEY = setting('DROPBOX_APP_KEY')
         self.DROPBOX_APP_SECRET = setting('DROPBOX_APP_SECRET')
+        self.DROPBOX_PERMANENT_LINK = DROPBOX_PERMANENT_LINK = setting('DROPBOX_PERMANENT_LINK', False)
         self.DROPBOX_ROOT_PATH = setting('DROPBOX_ROOT_PATH')
         self.MEDIA_URL = setting('MEDIA_URL')
         self.timeout = setting('DROPBOX_TIMEOUT', _DEFAULT_TIMEOUT)
@@ -52,9 +55,10 @@ class DropBoxStorage(Storage):
             name = content.name
         if not hasattr(content, "chunks"):
             content = File(content, name)
-        name = self.get_available_name(name, max_length=max_length)
-        name = self._save(name, content)
-        return name
+        path = self.get_available_name(name, content, max_length=max_length)
+        if path[1] is None:
+            self._save(path[0], content)
+        return path[0]
     def _save(self, name, content):
         content.open()
         if content.size <= self.CHUNK_SIZE:
@@ -64,7 +68,7 @@ class DropBoxStorage(Storage):
         content.close()
         return name
 
-    def get_available_name(self, name, max_length=None):
+    def get_available_name(self, name, content, max_length=None):
         """
         Return a filename that's free on the target storage system and
         available for new content to be written to.
@@ -74,11 +78,22 @@ class DropBoxStorage(Storage):
         index = 0
         while(1):
             index += 1
-            if self.exists(new_name):
+            if self.exists(new_name): # check file existence with file name
+                if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
+                    # check file existence with file's contents
+                    remote_file = self.open(new_name)
+                    remote_file.open()
+                    content.open()
+                    remote_file_data = remote_file.read()
+                    content_data = content.read()
+                    remote_file.close()
+                    content.close()
+                    if remote_file_data == content_data:
+                        return (new_name, 'Exists')
                 new_name = self.get_alternative_name(formatted_name, index=index)
                 continue
             break
-        return new_name
+        return (new_name, None)
     
     def generate_filename(self, filename):
         """
@@ -104,7 +119,8 @@ class DropBoxStorage(Storage):
         res = file_root.rsplit('.', 1)  # Split on last occurrence of delimiter
         file_name = f"{res[0]}({index})"
         file_ext = res[1]
-        return f"{file_name}.{file_ext}"
+        updated_name =  f"{file_name}.{file_ext}"
+        return updated_name
 
     def delete(self, name):
         """
@@ -143,21 +159,21 @@ class DropBoxStorage(Storage):
         metadata = self.dbx.files_get_metadata(name)
         return metadata.size
 
-    def url(self, name, permanent_link=False):
+    def url(self, name, permanent_link=DROPBOX_PERMANENT_LINK):
         """
         Return an absolute URL where the file's contents can be accessed directly by a web browser.
         """
         try:
             if not permanent_link:
                 media = self.dbx.files_get_temporary_link(name)
-                return media.link
+                file_url = media.link
             else:
                 dbx_share_settings = dbx_sharing.SharedLinkSettings(allow_download=True)
                 media = self.dbx.sharing_create_shared_link_with_settings(name, settings=dbx_share_settings)
                 file_url = str(media.url)[:-1]+"1"
-                return file_url
-        except ApiError:
-            return None
+            return file_url
+        except ApiError as e:
+            raise e
 
     def get_accessed_time(self, name):
         """
