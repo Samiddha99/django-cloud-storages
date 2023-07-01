@@ -11,7 +11,9 @@ build:
   tools:
     python: ">=3.7"
     # You can also specify other tool versions:
-    django: ">=4.1"
+    # nodejs: "19"
+    # rust: "1.64"
+    # golang: "1.19"
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
