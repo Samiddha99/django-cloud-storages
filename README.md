@@ -1,4 +1,4 @@
-# Welcome to django-cloud-storages's
+# Welcome to django-cloud-storages
 
 django-cloud-storages is a package developed for django to work with cloud storages to store/upload media files.
 
