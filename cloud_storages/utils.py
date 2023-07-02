@@ -13,6 +13,15 @@ def setting(name, default=None):
     return getattr(settings, name, default)
 
 
+def dropBoxErrorMsg(err_tag):
+    err_dict = {
+        "not_found": "not_found: There is nothing at the given path.",
+        "not_file": "not_file: We were expecting a file, but the given path refers to something that isn't a file.",
+        "not_folder": "not_folder: We were expecting a folder, but the given path refers to something that isn't a folder.",
+        "restricted_content": "restricted_content: The file cannot be proceed because the content is restricted."
+    }
+    return err_dict[err_tag]
+
 class FileNameLengthError(Exception):
     """Exception raised for errors when file name length is too large or too small.
     """

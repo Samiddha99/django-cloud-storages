@@ -72,10 +72,15 @@ Sign In to `AppWrite`_ and create a new *project* and *bucket* in *storage*.
    Appwrite support custom domain; so if you want to use your domain address for API call and file hosting, you can set the your domain in this setting.
    The domain address must not end with ``/``. For more details check `Appwrite Custom domain`_.
 
-``CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT`` (optional, default ``False``)
+``CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT`` (optional, default ``True``)
     If it set to ``False``, then during the new file upload/save if it find that a file is already exists in your storage with the same file name
     and also have same file's content, it will not save the new file in the cloud instead it just return the path of that existing file.
     If set to ``True``, it will save the file anyway.
+
+``OVERWRITE_FILE`` (optional, default ``False``)
+    If it set to ``True``, then during saving a file in cloud if the storage backend find that another file with the same name (but may have different contents)
+    exists in the cloud, then it will delete the existing file from the cloud and save the new file.
+    When set to ``False``, it will not delete the existing file from the cloud, instead it will save the new by modifying the name of the new file to avoid conflict.
 
 Important Notes
 ****************

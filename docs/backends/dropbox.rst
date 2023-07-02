@@ -85,10 +85,15 @@ the *storage backend* defined in *DEFAULT_FILE_STORAGE* will be used for the mod
    If you want to get a permanent link (will be same in every request), set this setting to ``True``.
    Also in ``url()`` method call, you can pass the parameter ``permanent_link`` (value: ``True`` or ``False``).
 
-``CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT`` (optional, default ``False``)
+``CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT`` (optional, default ``True``)
     If it set to ``False``, then during the new file upload/save if it find that a file is already exists in your storage with the same file name
     and also have same file's content, it will not save the new file in the cloud instead it just return the path of that existing file.
     If set to ``True``, it will save the file anyway.
+
+``OVERWRITE_FILE`` (optional, default ``False``)
+    If it set to ``True``, then during saving a file in cloud if the storage backend find that another file with the same name (but may have different contents)
+    exists in the cloud, then it will delete the existing file from the cloud and save the new file.
+    When set to ``False``, it will not delete the existing file from the cloud, instead it will save the new by modifying the name of the new file to avoid conflict.
 
 Get DROPBOX_OAUTH2_ACCESS_TOKEN and DROPBOX_OAUTH2_REFRESH_TOKEN
 #################################################################

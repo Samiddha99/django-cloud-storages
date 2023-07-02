@@ -3,6 +3,7 @@ import secrets
 import string
 import traceback
 import re
+from io import BytesIO
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
@@ -25,7 +26,8 @@ class AppWriteStorage(Storage):
     CHUNK_SIZE = 4 * 1024 * 1024
     MAX_FILE_NAME_LENGTH = 30
     def __init__(self):
-        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', False)
+        self.OVERWRITE_FILE = setting('OVERWRITE_FILE', False)
+        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', True)
         self.APPWRITE_API_KEY = setting('APPWRITE_API_KEY')
         self.APPWRITE_PROJECT_ID = setting('APPWRITE_PROJECT_ID')
         self.APPWRITE_BUCKET_ID = setting('APPWRITE_BUCKET_ID')
@@ -47,9 +49,9 @@ class AppWriteStorage(Storage):
         folder, filename = self.extract_folder_and_filename(name)
         try:
             response = self.storage.get_file_view(folder, filename)
-            data = ContentFile(response)
-            remote_file = File(data)
-            return remote_file
+            file_content = BytesIO(response)
+            response_file = File(file_content, name=name)
+            return response_file
         except AppwriteException as e:
             if str(e) == "Storage bucket with the requested ID could not be found.":
                 error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
@@ -91,13 +93,13 @@ class AppWriteStorage(Storage):
     def extract_folder_and_filename(self, path):
         path = str(path).replace("\\", "/")
         folders = path.split("/")
-        if len(folders) == 0:
+        if len(folders) == 0:  # file.txt
             last_folder = self.APPWRITE_BUCKET_ID
             file_name = path
-        elif len(folders) == 1:
+        elif len(folders) == 1:  # /file.txt
             last_folder = self.APPWRITE_BUCKET_ID
             file_name = folders[0]
-        else:
+        else: # folder/folder2/file.txt
             file_name = folders.pop()  # eliminate the last item i.e. file name
             last_folder = folders.pop()
         last_folder = last_folder if len(last_folder) <= self.MAX_FILE_NAME_LENGTH else last_folder[0:30]
@@ -122,24 +124,26 @@ class AppWriteStorage(Storage):
         """
         formatted_name = self.get_valid_name(name)
         new_name = formatted_name
-        index = 0
-        while(1):
-            index += 1
-            if self.exists(new_name): # check file existence with file name
-                if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
-                    # check file existence with file's contents
-                    remote_file = self.open(new_name)
-                    remote_file.open()
-                    content.open()
-                    remote_file_data = remote_file.read()
-                    content_data = content.read()
-                    remote_file.close()
-                    content.close()
-                    if remote_file_data == content_data:
-                        return (new_name, 'Exists')
-                new_name = self.get_alternative_name(formatted_name, index=index)
-                continue
-            break
+        if self.OVERWRITE_FILE:
+            try:
+                self.delete(new_name)
+            except ContentDoesNotExistsError:
+                pass
+        else:
+            index = 0
+            while(1):
+                index += 1
+                if self.exists(new_name): # check file existence with file name
+                    if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
+                        # check file existence with file's contents
+                        remote_file = self.open(new_name)
+                        remote_file_data = remote_file.read()
+                        content_data = content.read()
+                        if remote_file_data == content_data:
+                            return (new_name, 'Exists')
+                    new_name = self.get_alternative_name(formatted_name, index=index)
+                    continue
+                break
         return (new_name, None)
     
     def generate_filename(self, filename):

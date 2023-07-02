@@ -1,9 +1,14 @@
 import requests
+import os
+import traceback
+from io import BytesIO
+import inspect
 
+from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
 from django.core.files import File
 from django.utils.deconstruct import deconstructible
-from django.utils.deconstruct import deconstructible
+from django.utils._os import safe_join
 
 import dropbox
 from dropbox import sharing as dbx_sharing
@@ -20,7 +25,8 @@ class DropBoxStorage(Storage):
     CHUNK_SIZE = 4 * 1024 * 1024
     DROPBOX_PERMANENT_LINK = False
     def __init__(self):
-        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', False)
+        self.OVERWRITE_FILE = setting('OVERWRITE_FILE', False)
+        self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', True)
         self.DROPBOX_OAUTH2_ACCESS_TOKEN = setting('DROPBOX_OAUTH2_ACCESS_TOKEN')
         self.DROPBOX_OAUTH2_REFRESH_TOKEN = setting('DROPBOX_OAUTH2_REFRESH_TOKEN')
         self.DROPBOX_APP_KEY = setting('DROPBOX_APP_KEY')
@@ -33,16 +39,32 @@ class DropBoxStorage(Storage):
         self.dbx = dropbox.Dropbox(app_key=self.DROPBOX_APP_KEY, app_secret=self.DROPBOX_APP_SECRET, oauth2_refresh_token=self.DROPBOX_OAUTH2_REFRESH_TOKEN)
         self.dbx.users_get_current_account()
 
+    def _full_path(self, name):
+        if name == '/':
+            name = ''
+        if name[0] in ["/", "\\"]:
+            name = name[1:]
+        joined_path = os.path.join(self.DROPBOX_ROOT_PATH, name).replace("\\", "/")
+        return joined_path
+
     def open(self, name, mode="rb"):
         """Retrieve the specified file from storage."""
         return self._open(name, mode)
     def _open(self, name, mode='rb'):
-        full_file_url = self.url(name)
-        response = requests.get(full_file_url)
-        if (response.status_code == 200):
-            data = response.text
-            remote_file = File(data)
-            return remote_file
+        full_name = self._full_path(name)
+        try:
+            file_metadata, response = self.dbx.files_download(full_name)
+            file_content = BytesIO(response.content)
+            response_file = File(file_content, name=name)
+            return response_file
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
+           
         
     def save(self, name, content, max_length=None):
         """
@@ -53,18 +75,19 @@ class DropBoxStorage(Storage):
         # Get the proper name for the file, as it will actually be saved.
         if name is None:
             name = content.name
-        if not hasattr(content, "chunks"):
-            content = File(content, name)
+        # if not hasattr(content, "chunks"):
+        #     content = File(content, name)
         path = self.get_available_name(name, content, max_length=max_length)
         if path[1] is None:
             self._save(path[0], content)
         return path[0]
     def _save(self, name, content):
+        full_name = self._full_path(name)
         content.open()
         if content.size <= self.CHUNK_SIZE:
-            self.dbx.files_upload(content.read(), name, mode=WriteMode(self.write_mode))
+            self.dbx.files_upload(content.read(), full_name, mode=WriteMode(self.write_mode))
         else:
-            self._chunked_upload(content, name)
+            self._chunked_upload(content, full_name)
         content.close()
         return name
 
@@ -75,24 +98,26 @@ class DropBoxStorage(Storage):
         """
         formatted_name = self.get_valid_name(name)
         new_name = formatted_name
-        index = 0
-        while(1):
-            index += 1
-            if self.exists(new_name): # check file existence with file name
-                if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
-                    # check file existence with file's contents
-                    remote_file = self.open(new_name)
-                    remote_file.open()
-                    content.open()
-                    remote_file_data = remote_file.read()
-                    content_data = content.read()
-                    remote_file.close()
-                    content.close()
-                    if remote_file_data == content_data:
-                        return (new_name, 'Exists')
-                new_name = self.get_alternative_name(formatted_name, index=index)
-                continue
-            break
+        if self.OVERWRITE_FILE:
+            try:
+                self.delete(new_name)
+            except ContentDoesNotExistsError:
+                pass
+        else:
+            index = 0
+            while(1):
+                index += 1
+                if self.exists(new_name): # check file existence with file name
+                    if not self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT:
+                        # check file existence with file's contents
+                        remote_file = self.open(name=new_name)
+                        remote_file_data = remote_file.read()
+                        content_data = content.read()
+                        if remote_file_data == content_data:
+                            return (new_name, 'Exists')
+                    new_name = self.get_alternative_name(formatted_name, index=index)
+                    continue
+                break
         return (new_name, None)
     
     def generate_filename(self, filename):
@@ -109,8 +134,8 @@ class DropBoxStorage(Storage):
         use in the target storage system.
         """
         name = str(name).replace("\\", "/")
-        path = f"{self.DROPBOX_ROOT_PATH}/{name}"
-        return path
+        # name = self._full_path(name)
+        return name
     
     def get_alternative_name(self, file_root, file_ext=None, index=0):
         """
@@ -120,23 +145,39 @@ class DropBoxStorage(Storage):
         file_name = f"{res[0]}({index})"
         file_ext = res[1]
         updated_name =  f"{file_name}.{file_ext}"
+        # updated_name = self._full_path(updated_name)
         return updated_name
 
     def delete(self, name):
         """
         Delete the specified file from the storage system.
         """
-        self.dbx.files_delete_v2(name)
-
+        full_name = self._full_path(name)
+        try:
+            self.dbx.files_delete_v2(full_name)
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
+                
     def exists(self, name):
         """
         Return True if a file referenced by the given name already exists in the
         storage system, or False if the name is available for a new file.
         """
+        full_name = self._full_path(name)
         try:
-            return bool(self.dbx.files_get_metadata(name))
-        except ApiError:
-            return False
+            return bool(self.dbx.files_get_metadata(full_name))
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                # lookUpError = err.get_path_lookup()
+                # error_msg = dropBoxErrorMsg(lookUpError._tag)
+                return False
+            raise e
     
     def listdir(self, path):
         """
@@ -156,48 +197,85 @@ class DropBoxStorage(Storage):
         """
         Return the total size, in bytes, of the file specified by name.
         """
-        metadata = self.dbx.files_get_metadata(name)
-        return metadata.size
+        full_name = self._full_path(name)
+        try:
+            metadata = self.dbx.files_get_metadata(full_name)
+            return metadata.size
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
 
     def url(self, name, permanent_link=DROPBOX_PERMANENT_LINK):
         """
         Return an absolute URL where the file's contents can be accessed directly by a web browser.
         """
+        full_name = self._full_path(name)
         try:
             if not permanent_link:
-                media = self.dbx.files_get_temporary_link(name)
+                media = self.dbx.files_get_temporary_link(full_name)
                 file_url = media.link
             else:
                 dbx_share_settings = dbx_sharing.SharedLinkSettings(allow_download=True)
-                media = self.dbx.sharing_create_shared_link_with_settings(name, settings=dbx_share_settings)
+                media = self.dbx.sharing_create_shared_link_with_settings(full_name, settings=dbx_share_settings)
                 file_url = str(media.url)[:-1]+"1"
             return file_url
-        except ApiError as e:
-            raise e
+        except Exception:
+            return None
 
     def get_accessed_time(self, name):
         """
         Return the last accessed time (as a datetime) of the file specified by name.
         The datetime will be timezone-aware if USE_TZ=True.
         """
-        last_accessed = self.dbx.files_get_metadata(name).client_modified
-        return last_accessed
+        full_name = self._full_path(name)
+        try:
+            last_accessed = self.dbx.files_get_metadata(full_name).client_modified
+            return last_accessed
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
 
     def get_created_time(self, name):
         """
         Return the creation time (as a datetime) of the file specified by name.
         The datetime will be timezone-aware if USE_TZ=True.
         """
-        created_at = self.dbx.files_get_metadata(name).client_modified
-        return created_at
+        full_name = self._full_path(name)
+        try:
+            created_at = self.dbx.files_get_metadata(full_name).client_modified
+            return created_at
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
 
     def get_modified_time(self, name):
         """
         Return the last modified time (as a datetime) of the file specified by
         name. The datetime will be timezone-aware if USE_TZ=True.
         """
-        last_modified = self.dbx.files_get_metadata(name).server_modified
-        return last_modified
+        full_name = self._full_path(name)
+        try:
+            last_modified = self.dbx.files_get_metadata(full_name).server_modified
+            return last_modified
+        except ApiError as e:
+            err = e.error
+            if err.is_path_lookup():
+                lookUpError = err.get_path_lookup()
+                error_msg = dropBoxErrorMsg(lookUpError._tag)
+                raise ContentDoesNotExistsError(error_msg)
+            raise e
                 
     def _chunked_upload(self, content, dest_path):
         upload_session = self.dbx.files_upload_session_start(content.read(self.CHUNK_SIZE))
@@ -209,5 +287,3 @@ class DropBoxStorage(Storage):
             else:
                 self.dbx.files_upload_session_append_v2(content.read(self.CHUNK_SIZE), cursor)
                 cursor.offset = content.tell()
-        
-
