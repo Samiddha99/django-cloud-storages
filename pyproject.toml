@@ -1,23 +1,43 @@
 [build-system]
-requires = ["hatchling", "django", "requests", "dropbox", "appwrite"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+required = ["django", "requests"]
+dropbox = ["django-cloud-storages[required]", "dropbox"]
+appwrite = ["django-cloud-storages[required]", "appwrite"]
 
 [project]
 name = "django-cloud-storages"
-version = "1.1.4"
+dynamic = ["version"]
 authors = [
   { name="Samiddha Chakrabarti", email="samiddha99@protonmail.com" },
 ]
 description = "Cloud file storages for django."
+dependencies = ["django", "requests", "dropbox", "appwrite"]
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: Django :: 4.2",
+    "Environment :: Other Environment",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Topic :: Utilities"
 ]
 
+[tool.hatch.version]
+path = "cloud_storages/__init__.py"
+
+[tool.hatch.build]
+exclude = ["requirements.txt", "/docs", "/venv", ".gitignore", ".env", "manage.py", "setup.py", "/tests"]
+
 [project.urls]
-"Homepage" = "https://github.com/Samiddha99/django-cloud-storages"
+"Homepage" = "https://pypi.org/project/django-cloud-storages"
+"Source code" = "https://github.com/Samiddha99/django-cloud-storages"
 "Documentation" = "https://django-cloud-storages.readthedocs.io"
 "Bug Tracker" = "https://github.com/Samiddha99/django-cloud-storages/issues"
