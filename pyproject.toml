@@ -13,6 +13,10 @@ dynamic = ["version"]
 authors = [
   { name="Samiddha Chakrabarti", email="samiddha99@protonmail.com" },
 ]
+maintainers = [
+  { name="Samiddha Chakrabarti", email="samiddha99@protonmail.com" },
+]
+keywords = ["django", "python", "django-storages", "django-file-storages", "cloud storage", "file storage", "django dropbox"]
 description = "Cloud file storages for django."
 dependencies = ["django", "requests", "dropbox", "appwrite"]
 readme = "README.md"
