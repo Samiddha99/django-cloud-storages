@@ -58,12 +58,7 @@ class DropBoxStorage(Storage):
             response_file = File(file_content, name=name)
             return response_file
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
            
         
     def save(self, name, content, max_length=None):
@@ -156,12 +151,7 @@ class DropBoxStorage(Storage):
         try:
             self.dbx.files_delete_v2(full_name)
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
                 
     def exists(self, name):
         """
@@ -170,7 +160,8 @@ class DropBoxStorage(Storage):
         """
         full_name = self._full_path(name)
         try:
-            return bool(self.dbx.files_get_metadata(full_name))
+            self.dbx.files_get_metadata(full_name)
+            return True
         except ApiError as e:
             err = e.error
             if err.is_path_lookup():
@@ -202,12 +193,7 @@ class DropBoxStorage(Storage):
             metadata = self.dbx.files_get_metadata(full_name)
             return metadata.size
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
 
     def url(self, name, permanent_link=DROPBOX_PERMANENT_LINK):
         """
@@ -236,12 +222,7 @@ class DropBoxStorage(Storage):
             last_accessed = self.dbx.files_get_metadata(full_name).client_modified
             return last_accessed
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
 
     def get_created_time(self, name):
         """
@@ -253,12 +234,7 @@ class DropBoxStorage(Storage):
             created_at = self.dbx.files_get_metadata(full_name).client_modified
             return created_at
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
 
     def get_modified_time(self, name):
         """
@@ -270,12 +246,7 @@ class DropBoxStorage(Storage):
             last_modified = self.dbx.files_get_metadata(full_name).server_modified
             return last_modified
         except ApiError as e:
-            err = e.error
-            if err.is_path_lookup():
-                lookUpError = err.get_path_lookup()
-                error_msg = dropBoxErrorMsg(lookUpError._tag)
-                raise ContentDoesNotExistsError(error_msg)
-            raise e
+            throwDropboxException(e)
                 
     def _chunked_upload(self, content, dest_path):
         upload_session = self.dbx.files_upload_session_start(content.read(self.CHUNK_SIZE))

@@ -53,14 +53,7 @@ class AppWriteStorage(Storage):
             response_file = File(file_content, name=name)
             return response_file
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)
     
     def save(self, name, content, max_length=None):
         """
@@ -190,15 +183,9 @@ class AppWriteStorage(Storage):
         folder, filename = self.extract_folder_and_filename(name)
         try:
             result = self.storage.delete_file(folder, filename)
+            return result
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)
 
     def exists(self, name):
         """
@@ -231,14 +218,7 @@ class AppWriteStorage(Storage):
             result = self.storage.get_file(folder, filename)
             return result.sizeOriginal
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)
     
     def url(self, name, permanent_link=None):
         """
@@ -258,14 +238,7 @@ class AppWriteStorage(Storage):
             result = self.storage.get_file(folder, filename)
             return result.updatedAt
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)
 
     def get_created_time(self, name):
         """
@@ -277,14 +250,7 @@ class AppWriteStorage(Storage):
             result = self.storage.get_file(folder, filename)
             return result.createdAt
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)
     
     def get_modified_time(self, name):
         """
@@ -296,11 +262,4 @@ class AppWriteStorage(Storage):
             result = self.storage.get_file(folder, filename)
             return result.updatedAt
         except AppwriteException as e:
-            if str(e) == "Storage bucket with the requested ID could not be found.":
-                error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
-                raise ContentDoesNotExistsError(error_msg)
-            elif str(e) == "The requested file could not be found.":
-                error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
-                raise ContentDoesNotExistsError(error_msg)
-            else:
-                raise e
+            throwAppwriteException(e, folder, filename)

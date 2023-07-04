@@ -41,3 +41,21 @@ class ContentDoesNotExistsError(Exception):
         super().__init__(self.message)
     def __str__(self):
         return self.message
+
+def throwAppwriteException(exception, folder='', filename=''):
+    if str(exception.message) == "Storage bucket with the requested ID could not be found.":
+        error_msg = f"The folder does not exists on the cloud storage.\nFolder Name: {folder}."
+        raise ContentDoesNotExistsError(error_msg)
+    elif str(exception.message) == "The requested file could not be found.":
+        error_msg = f"The file does not exists on the cloud storage.\nFile Name: {filename}."
+        raise ContentDoesNotExistsError(error_msg)
+    else:
+        raise exception
+
+def throwDropboxException(exception):
+    err = exception.error
+    if err.is_path_lookup():
+        lookUpError = err.get_path_lookup()
+        error_msg = dropBoxErrorMsg(lookUpError._tag)
+        raise ContentDoesNotExistsError(error_msg)
+    raise exception
