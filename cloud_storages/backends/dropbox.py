@@ -149,7 +149,8 @@ class DropBoxStorage(Storage):
         """
         full_name = self._full_path(name)
         try:
-            self.dbx.files_delete_v2(full_name)
+            result = self.dbx.files_delete_v2(full_name)
+            return result
         except ApiError as e:
             throwDropboxException(e)
                 
@@ -168,7 +169,8 @@ class DropBoxStorage(Storage):
                 # lookUpError = err.get_path_lookup()
                 # error_msg = dropBoxErrorMsg(lookUpError._tag)
                 return False
-            raise e
+            else:
+                raise e
     
     def listdir(self, path):
         """
