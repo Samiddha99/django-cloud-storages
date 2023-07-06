@@ -165,7 +165,7 @@ class DropBoxStorage(Storage):
             return True
         except ApiError as e:
             err = e.error
-            if err.is_path_lookup():
+            if err.is_path():
                 # lookUpError = err.get_path_lookup()
                 # error_msg = dropBoxErrorMsg(lookUpError._tag)
                 return False

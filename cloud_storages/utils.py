@@ -54,8 +54,15 @@ def throwAppwriteException(exception, folder='', filename=''):
 
 def throwDropboxException(exception):
     err = exception.error
-    if err.is_path_lookup():
-        lookUpError = err.get_path_lookup()
+    try:
+        is_path_lookup = err.is_path_lookup()
+    except Exception:
+        is_path_lookup = err.is_path()
+    if is_path_lookup:
+        try:
+            lookUpError = err.get_path_lookup()
+        except Exception:
+            lookUpError = err.get_path()
         error_msg = dropBoxErrorMsg(lookUpError._tag)
         raise ContentDoesNotExistsError(error_msg)
     raise exception
