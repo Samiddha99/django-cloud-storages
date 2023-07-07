@@ -83,7 +83,8 @@ class DropBoxStorage(Storage):
             self.dbx.files_upload(content.read(), full_name, mode=WriteMode(self.write_mode))
         else:
             self._chunked_upload(content, full_name)
-        content.close()
+        content.seek(0)
+        # content.close()
         return name
 
     def get_available_name(self, name, content, max_length=None):

@@ -75,7 +75,8 @@ class AppWriteStorage(Storage):
         content.open()
         the_file = InputFile.from_bytes(bytes=content.read(), filename=content.name)
         result = self.storage.create_file(bucket_id=folder, file_id=filename, file=the_file)
-        content.close()
+        content.seek(0)
+        # content.close()
         return path
     
     def _id_validation(self, name):
