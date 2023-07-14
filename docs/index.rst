@@ -22,8 +22,7 @@ Installation
 Use pip to install from PyPI::
 
    pip install django-cloud-storages
-
-It will install all the cloud storage backends (available in this package), you can choose any of the storage backend as per your requirement.
+   
 
 Contributing
 ************

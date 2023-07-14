@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project.optional-dependencies]
 required = ["django", "requests"]
-dropbox = ["django-cloud-storages[required]", "dropbox"]
-appwrite = ["django-cloud-storages[required]", "appwrite"]
+dropbox = ["django-cloud-storages[required]", "dropbox>=11.36.2"]
+appwrite = ["django-cloud-storages[required]", "appwrite>=2.0.0"]
 
 [project]
 name = "django-cloud-storages"
@@ -18,7 +18,7 @@ maintainers = [
 ]
 keywords = ["django", "python", "django-storages", "django-file-storages", "cloud storage", "file storage", "django dropbox"]
 description = "Cloud file storages for django."
-dependencies = ["django", "requests", "dropbox", "appwrite"]
+dependencies = ["django", "requests"]
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

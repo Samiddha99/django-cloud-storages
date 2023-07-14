@@ -8,8 +8,6 @@ If you want to use `Appwrite storage`_ backend in your django project to host me
 
    pip install django-cloud-storages[appwrite]
 
-NOTE: If you run ``pip install django-cloud-storages``, it will install all the supported cloud storage backends including Appwrite.
-Run this command if you need all the available storage backends in your project.
 
 Settings
 --------

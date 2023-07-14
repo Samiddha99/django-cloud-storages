@@ -8,8 +8,6 @@ to host media files in Dropbox cloud storage, you can use this package.
 
    pip install django-cloud-storages[dropbox]
 
-NOTE: If you run ``pip install django-cloud-storages``, it will install all the supported cloud storage backends including Dropbox.
-Run this command if you need all the available storage backends in your project.
 
 Settings
 --------
