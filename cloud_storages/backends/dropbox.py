@@ -23,7 +23,6 @@ _DEFAULT_MODE = 'add'
 @deconstructible
 class DropBoxStorage(Storage):
     CHUNK_SIZE = 4 * 1024 * 1024
-    DROPBOX_PERMANENT_LINK = False
     def __init__(self):
         self.OVERWRITE_FILE = setting('OVERWRITE_FILE', False)
         self.CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT = setting('CLOUD_STORAGE_CREATE_NEW_IF_SAME_CONTENT', True)
@@ -31,7 +30,7 @@ class DropBoxStorage(Storage):
         self.DROPBOX_OAUTH2_REFRESH_TOKEN = setting('DROPBOX_OAUTH2_REFRESH_TOKEN')
         self.DROPBOX_APP_KEY = setting('DROPBOX_APP_KEY')
         self.DROPBOX_APP_SECRET = setting('DROPBOX_APP_SECRET')
-        self.DROPBOX_PERMANENT_LINK = DROPBOX_PERMANENT_LINK = setting('DROPBOX_PERMANENT_LINK', False)
+        self.DROPBOX_PERMANENT_LINK = setting('DROPBOX_PERMANENT_LINK', False)
         self.DROPBOX_ROOT_PATH = setting('DROPBOX_ROOT_PATH')
         self.MEDIA_URL = setting('MEDIA_URL')
         self.timeout = setting('DROPBOX_TIMEOUT', _DEFAULT_TIMEOUT)
@@ -198,21 +197,31 @@ class DropBoxStorage(Storage):
         except ApiError as e:
             throwDropboxException(e)
 
-    def url(self, name, permanent_link=DROPBOX_PERMANENT_LINK):
+    def url(self, name, permanent_link=setting('DROPBOX_PERMANENT_LINK', False)):
         """
         Return an absolute URL where the file's contents can be accessed directly by a web browser.
         """
         full_name = self._full_path(name)
         try:
-            if not permanent_link:
+            if permanent_link:
+                try:
+                    dbx_share_settings = dbx_sharing.SharedLinkSettings(allow_download=True)
+                    media = self.dbx.sharing_create_shared_link_with_settings(full_name, settings=dbx_share_settings)
+                    file_url = media.url
+                except ApiError as exception:
+                    err = exception.error
+                    if err.is_shared_link_already_exists():
+                        media = self.dbx.sharing_list_shared_links(full_name)
+                        file_url = media.links[0].url
+                    else:
+                        raise exception
+            else:
                 media = self.dbx.files_get_temporary_link(full_name)
                 file_url = media.link
-            else:
-                dbx_share_settings = dbx_sharing.SharedLinkSettings(allow_download=True)
-                media = self.dbx.sharing_create_shared_link_with_settings(full_name, settings=dbx_share_settings)
-                file_url = str(media.url)[:-1]+"1"
+            file_url = str(file_url).replace("dl=0", "dl=1")
+            file_url = f"{file_url}"
             return file_url
-        except Exception:
+        except Exception as e:
             return None
 
     def get_accessed_time(self, name):
